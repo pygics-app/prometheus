@@ -6,7 +6,7 @@ Created on 2017. 5. 18.
 
 import uuid
 import inspect
-from pygics import Task, Queue
+from pygics import Task, Queue, api
 
 _prometheus_generators = {}
 _prometheus_generator_by_uuid = {}
@@ -16,6 +16,7 @@ _prometheus_actor_by_uuid = {}
 class Element:
     
     VENDOR = 'Unknown'
+    PRODUCT = 'Unknown'
     TITLE = 'Unknown'
     VERSION = ''
     INFO = ''
@@ -368,6 +369,7 @@ def register(cls):
     mro = inspect.getmro(cls)
     if Generator in mro:
         vendor = cls.VENDOR
+        product = cls.PRODUCT
         title = cls.TITLE
         if vendor not in _prometheus_generators:
             _prometheus_generators[vendor] = {}
@@ -375,6 +377,7 @@ def register(cls):
         _prometheus_generators[vendor][title] = {'uuid' : cls_uuid,
                                                  'type' : 'generator',
                                                  'vendor' : vendor,
+                                                 'product' : product,
                                                  'title' : title,
                                                  'version' : cls.VERSION,
                                                  'info' : cls.INFO,
@@ -382,6 +385,7 @@ def register(cls):
         _prometheus_generator_by_uuid[uuid] = cls
     elif Processor in mro:
         vendor = cls.VENDOR
+        product = cls.PRODUCT
         title = cls.TITLE
         if vendor not in _prometheus_actors:
             _prometheus_actors[vendor] = {}
@@ -392,9 +396,24 @@ def register(cls):
         _prometheus_actors[vendor][title] = {'uuid' : cls_uuid,
                                              'type' : type,
                                              'vendor' : vendor,
+                                             'product' : product,
                                              'title' : title,
                                              'version' : cls.VERSION,
                                              'info' : cls.INFO,
                                              'description' : cls.DESC}
         _prometheus_actor_by_uuid[uuid] = cls
     return cls
+
+@api('GET', '/generator')
+def get_generators(req, uuid=None):
+    if uuid != None:
+        cls = _prometheus_generator_by_uuid[uuid]
+        return _prometheus_generators[cls.VENDOR][cls.TITLE]
+    return _prometheus_generators
+ 
+@api('GET', '/actor')
+def get_actors(req, uuid=None):
+    if uuid != None:
+        cls = _prometheus_actor_by_uuid[uuid]
+        return _prometheus_actors[cls.VENDOR][cls.TITLE]
+    return _prometheus_actors
