@@ -97,3 +97,14 @@ def create_actor(req, fid, aid, name='Non-Named Actor'):
 def delete_actor(req, fid, aid):
     _flow = _prometheus_flow_by_uuid[fid]
     return _flow.delProcessor(aid)
+
+#===============================================================================
+# Web
+#===============================================================================
+import webgui
+
+page = webgui.Page()
+
+@pygics.api('GET', '/', 'text/html')
+def get_page(req):
+    return page.render()
