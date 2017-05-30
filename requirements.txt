@@ -1,1 +1,1 @@
-pygics::webgui
+app::webgui
