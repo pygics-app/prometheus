@@ -6,21 +6,17 @@ Created on 2017. 5. 18.
 
 import uuid
 import inspect
-from pygics import Task, Queue, api
+from pygics import Task, Queue
+
+_prometheus_flow_by_uuid = {}
 
 _prometheus_generators = {}
 _prometheus_generator_by_uuid = {}
+
 _prometheus_actors = {}
 _prometheus_actor_by_uuid = {}
 
 class Element:
-    
-    VENDOR = 'Unknown'
-    PRODUCT = 'Unknown'
-    TITLE = 'Unknown'
-    VERSION = ''
-    INFO = ''
-    DESC = ''
     
     def __init__(self):
         self._prometheus_uuid = str(uuid.uuid4()).replace('-', '')
@@ -29,9 +25,16 @@ class Element:
         self._prometheus_next = None
     
     def getUUID(self): return self._prometheus_uuid
-    def getName(self): return self._prometheus_name
     
 class Processor(Element):
+    
+    VENDOR = 'Unknown'
+    PRODUCT = 'Unknown'
+    TITLE = 'Unknown'
+    VERSION = ''
+    INFO = ''
+    DESC = ''
+    SCHEME = None
     
     class InputParamNotMatched(Exception):
         def __init__(self): Exception.__init__(self, 'input parameter not matched')
@@ -42,18 +45,20 @@ class Processor(Element):
     class ExceptProcessing(Exception):
         def __init__(self, e): Exception.__init__(self, str(e))
     
-    def __init__(self):
+    def __init__(self, name):
         Element.__init__(self)
+        self._prometheus_name = name
         self._prometheus_create_scheme = {}
-        self._prometheus_input_scheme = {}
-        self._prometheus_output_scheme = {}
+        self._prometheus_input_scheme = None
+        self._prometheus_output_scheme = None
+        
         self._prometheus_create_option = {}
-        self._prometheus_input_option = {}
-        self._prometheus_output_option = {}
+        self._prometheus_input_option = None
+        self._prometheus_output_option = None
         
         spec = inspect.getargspec(self.create)
         
-        self._prometheus_create_args = spec.args
+        self._prometheus_create_args = spec.args[1:]
         self._prometheus_create_defs = spec.defaults if spec.defaults != None else []
         
         alen = len(self._prometheus_create_args)
@@ -66,9 +71,19 @@ class Processor(Element):
                 self._prometheus_create_scheme[self._prometheus_create_args[i]] = 'optional'
                 self._prometheus_create_option[self._prometheus_create_args[i]] = self._prometheus_create_defs[i - rlen]
     
+    def getScheme(self):
+        return {'create' : self._prometheus_create_scheme,
+                'input' : self._prometheus_input_scheme,
+                'output' : self._prometheus_output_scheme}
+    
+    def getName(self):
+        return self._prometheus_name
+    
     def __set_input_scheme__(self):
         spec = inspect.getargspec(self.InputScheme)
         
+        self._prometheus_input_scheme = {}
+        self._prometheus_input_option = {}
         self._prometheus_input_args = spec.args[1:]
         self._prometheus_input_defs = spec.defaults if spec.defaults != None else []
         
@@ -91,6 +106,8 @@ class Processor(Element):
     def __set_output_scheme__(self):
         spec = inspect.getargspec(self.OutputScheme)
         
+        self._prometheus_output_scheme = {}
+        self._prometheus_output_option = {}
         self._prometheus_output_args = spec.args[1:]
         self._prometheus_output_defs = spec.defaults if spec.defaults != None else []
         
@@ -99,9 +116,9 @@ class Processor(Element):
         rlen = alen - dlen
         
         for i in range(0, alen):
-            if i < rlen: self._prometheus_output_scheme[self._prometheus_output_args[i]] = 'required'
+            if i < rlen: self._prometheus_output_scheme[self._prometheus_output_args[i]] = 'proactive'
             else:
-                self._prometheus_output_scheme[self._prometheus_output_args[i]] = 'optional'
+                self._prometheus_output_scheme[self._prometheus_output_args[i]] = 'passive'
                 self._prometheus_output_option[self._prometheus_output_args[i]] = self._prometheus_output_defs[i - rlen]
     
     def __inspect_output_format__(self, data):
@@ -188,15 +205,16 @@ class Generator(Processor):
     #===========================================================================
     # Inheritance
     #===========================================================================
-    def __init__(self):
-        Processor.__init__(self)
+    def __init__(self, name='Non-Named Generator'):
+        Processor.__init__(self, name)
         self.__set_output_scheme__()
     
     #===========================================================================
     # Internal Trigger
     #===========================================================================
     def trigger(self, data):
-        if self._prometheus_flow != None: self._prometheus_flow._prometheus_flow_trigger.put(data)
+        if self._prometheus_flow != None and self._prometheus_flow.isRun():
+            self._prometheus_flow._prometheus_flow_trigger.put(data)
     
 class Actor(Processor):
     
@@ -212,8 +230,8 @@ class Actor(Processor):
     #===========================================================================
     # Inheritance
     #===========================================================================
-    def __init__(self):
-        Processor.__init__(self)
+    def __init__(self, name='Non-Named Actor'):
+        Processor.__init__(self, name)
         self.__set_input_scheme__()
         self.__set_output_scheme__()
     
@@ -239,8 +257,8 @@ class Terminator(Processor):
     #===========================================================================
     # Inheritance
     #===========================================================================
-    def __init__(self):
-        Processor.__init__(self)
+    def __init__(self, name='Non-Named Terminator'):
+        Processor.__init__(self, name)
         self.__set_input_scheme__()
     
     #===========================================================================
@@ -253,14 +271,23 @@ class Terminator(Processor):
 
 class Flow(Task):
     
-    def __init__(self):
+    def __init__(self, name='Non-Named Flow'):
         Task.__init__(self)
+        self._prometheus_name = name
         self._prometheus_uuid = str(uuid.uuid4()).replace('-', '')
         self._prometheus_flow_trigger = Queue()
         
         self._prometheus_flow_processors = {}
         self._prometheus_flow_interfaces = {}
         self._prometheus_flow_generator = None
+        
+        _prometheus_flow_by_uuid[self._prometheus_uuid] = self
+    
+    def delete(self):
+        self.stop()
+        if self._prometheus_uuid in _prometheus_flow_by_uuid: _prometheus_flow_by_uuid.pop(self._prometheus_uuid)
+        self.delGenerator()
+        for uuid in self._prometheus_flow_processors.keys(): self.delProcessor(uuid)
         
     def run(self):
         data = self._prometheus_flow_trigger.get()
@@ -300,7 +327,6 @@ class Flow(Task):
         if output_interface != None:
             output_interface = self._prometheus_flow_interfaces.pop(output_interface._prometheus_uuid)
             output_interface._prometheus_next._prometheus_prev = None
-            output_interface.delete()
             del output_interface
         generator.delete()
         del generator
@@ -315,19 +341,17 @@ class Flow(Task):
     
     def delProcessor(self, uuid):
         if uuid not in self._prometheus_flow_processors: return False
-        if uuid == self._prometheus_flow_generator._prometheus_uuid: return False
+        if self._prometheus_flow_generator != None and uuid == self._prometheus_flow_generator._prometheus_uuid: return False
         processor = self._prometheus_flow_processors.pop(uuid)
         input_interface = processor._prometheus_prev
         output_interface = processor._prometheus_next
         if input_interface != None:
             input_interface = self._prometheus_flow_interfaces.pop(input_interface._prometheus_uuid)
             input_interface._prometheus_prev._prometheus_next = None
-            input_interface.delete()
             del input_interface
         if output_interface != None:
             output_interface = self._prometheus_flow_interfaces.pop(output_interface._prometheus_uuid)
             output_interface._prometheus_next._prometheus_prev = None
-            output_interface.delete()
             del output_interface
         processor.delete()
         del processor
@@ -361,7 +385,6 @@ class Flow(Task):
         interface = self._prometheus_flow_interfaces.pop(uuid)
         interface._prometheus_prev._prometheus_next = None
         interface._prometheus_next._prometheus_prev = None
-        interface.delete()
         del interface
         return True
 
@@ -371,49 +394,43 @@ def register(cls):
         vendor = cls.VENDOR
         product = cls.PRODUCT
         title = cls.TITLE
-        if vendor not in _prometheus_generators:
-            _prometheus_generators[vendor] = {}
+        inst = cls('test build')
+        scheme = inst.getScheme()
+        del inst
+        if vendor not in _prometheus_generators: _prometheus_generators[vendor] = {}
+        if product not in _prometheus_generators[vendor]: _prometheus_generators[vendor][product] = {}
         cls_uuid = str(uuid.uuid4()).replace('-', '')
-        _prometheus_generators[vendor][title] = {'uuid' : cls_uuid,
-                                                 'type' : 'generator',
-                                                 'vendor' : vendor,
-                                                 'product' : product,
-                                                 'title' : title,
-                                                 'version' : cls.VERSION,
-                                                 'info' : cls.INFO,
-                                                 'description' : cls.DESC}
+        _prometheus_generators[vendor][product][title] = {'uuid' : cls_uuid,
+                                                          'type' : 'generator',
+                                                          'vendor' : vendor,
+                                                          'product' : product,
+                                                          'title' : title,
+                                                          'version' : cls.VERSION,
+                                                          'info' : cls.INFO,
+                                                          'description' : cls.DESC,
+                                                          'scheme' : scheme}
         _prometheus_generator_by_uuid[uuid] = cls
     elif Processor in mro:
         vendor = cls.VENDOR
         product = cls.PRODUCT
         title = cls.TITLE
-        if vendor not in _prometheus_actors:
-            _prometheus_actors[vendor] = {}
+        inst = cls('test build')
+        scheme = inst.getScheme()
+        del inst
+        if vendor not in _prometheus_actors: _prometheus_actors[vendor] = {}
+        if product not in _prometheus_actors[vendor]: _prometheus_actors[vendor][product] = {}
         cls_uuid = str(uuid.uuid4()).replace('-', '')
         if Actor in mro: type = 'actor'
         elif Terminator in mro: type = 'terminator'
-        else: type = 'raw'
-        _prometheus_actors[vendor][title] = {'uuid' : cls_uuid,
-                                             'type' : type,
-                                             'vendor' : vendor,
-                                             'product' : product,
-                                             'title' : title,
-                                             'version' : cls.VERSION,
-                                             'info' : cls.INFO,
-                                             'description' : cls.DESC}
+        else: type = 'unknown'
+        _prometheus_actors[vendor][product][title] = {'uuid' : cls_uuid,
+                                                      'type' : type,
+                                                      'vendor' : vendor,
+                                                      'product' : product,
+                                                      'title' : title,
+                                                      'version' : cls.VERSION,
+                                                      'info' : cls.INFO,
+                                                      'description' : cls.DESC,
+                                                      'scheme' : scheme}
         _prometheus_actor_by_uuid[uuid] = cls
     return cls
-
-@api('GET', '/generator')
-def get_generators(req, uuid=None):
-    if uuid != None:
-        cls = _prometheus_generator_by_uuid[uuid]
-        return _prometheus_generators[cls.VENDOR][cls.TITLE]
-    return _prometheus_generators
- 
-@api('GET', '/actor')
-def get_actors(req, uuid=None):
-    if uuid != None:
-        cls = _prometheus_actor_by_uuid[uuid]
-        return _prometheus_actors[cls.VENDOR][cls.TITLE]
-    return _prometheus_actors
