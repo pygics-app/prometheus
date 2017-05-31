@@ -101,9 +101,9 @@ def delete_actor(req, fid, aid):
 #===============================================================================
 # Web
 #===============================================================================
-import webgui
+import page
 
-page = webgui.Page()
+page = page.Page()
 
 @pygics.api('GET', '/', 'text/html')
 def get_page(req):
