@@ -1,1 +1,1 @@
-app::webgui
+app::page
