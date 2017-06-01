@@ -101,10 +101,3 @@ def delete_actor(req, fid, aid):
 #===============================================================================
 # Web
 #===============================================================================
-import page
-
-page = page.Page()
-
-@pygics.api('GET', '/', 'text/html')
-def get_page(req):
-    return page.render()
