@@ -101,3 +101,14 @@ def delete_actor(req, fid, aid):
 #===============================================================================
 # Web
 #===============================================================================
+from page import *
+prometheus_page = PAGE()
+
+@PAGE.MAIN(prometheus_page, 'Prometheus')
+def prometheus_page_main(req):
+    return DIV().html(
+        HEAD(1).html("Prometheus Main"),
+        PARA().html('This is Prometheus Page')
+    )
+
+
